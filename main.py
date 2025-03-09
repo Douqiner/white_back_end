@@ -29,7 +29,7 @@ with app.app_context():
 class User(db.Model):
     __tablename__ = "user"
     username = db.Column(db.String(20), nullable=False, unique=True, primary_key=True)
-    password = db.Column(db.String(60), nullable=False)
+    password = db.Column(db.String(200), nullable=False)
 
 # 用户登录
 @app.route('/api/login', methods=['POST'])
