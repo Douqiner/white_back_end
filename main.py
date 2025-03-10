@@ -97,7 +97,7 @@ def look():
     # 获取请求头中的Token
     token = request.headers.get('Authorization')
     if not token:
-        return jsonify({"code": 401, "message": "缺少Token"}), 401
+        return jsonify({"code": 401, "message": "缺少Token"})
     
     message = check_token(token)
     if message:
