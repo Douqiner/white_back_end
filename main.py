@@ -2,6 +2,9 @@ from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
+import datetime
+from datetime import datetime
+import jwt
 
 
 app = Flask(__name__)
@@ -15,21 +18,26 @@ app.secret_key = 'xxxxxxx'
 host = "localhost",
 port = 3306,
 user = "root",
-password = "123456",
+password = "Huangjiayi_001",
 database = "white_web",
 charset = "utf8"
 # 配置app参数
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:123456@localhost:3306/white_web?charset=utf8mb4'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:Huangjiayi_001@localhost:3306/white_web?charset=utf8mb4'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True  # True跟踪数据库的修改，及时发送信号
 db = SQLAlchemy(app)
 
 with app.app_context():
     db.create_all()
 
+
 class User(db.Model):
     __tablename__ = "user"
     username = db.Column(db.String(20), nullable=False, unique=True, primary_key=True)
-    password = db.Column(db.String(60), nullable=False)
+    password = db.Column(db.String(200), nullable=False)
+    phonenumber = db.Column(db.String(11), nullable=False)
+    usertype = db.Column(db.Int, nullable=False)
+    # usertype 区分用户类型 1为一般用户 2为司机
+
 
 # 用户登录
 @app.route('/api/login', methods=['POST'])
@@ -60,12 +68,15 @@ def login():
             "message": "账号或密码错误"
         })
 
+
 # 用户注册
 @app.route('/api/register', methods=['POST'])
 def register():
     data = request.json
     username = data.get('username')
     password = data.get('password')
+    phonenumber = data.get('phonenumber')
+    usertype = data.get('usertype')
 
     # 验证用户
     user = User.query.filter_by(username=username).first()
@@ -76,7 +87,7 @@ def register():
             "message": "用户已存在"
         })
     # 添加用户
-    user = User(username=username, password=generate_password_hash(password))
+    user = User(username=username, password=generate_password_hash(password), phonenumber=phonenumber, usertype=usertype)
     db.session.add(user)
     db.session.commit()
     print('注册成功')
@@ -119,10 +130,9 @@ def look():
         }
     })
 
+
 # 生成Token
 def generate_token(username):
-    import jwt
-    import datetime
     payload = {
         "username": username,
         "exp": datetime.datetime.now() + datetime.timedelta(hours=1)  # 1小时有效期
@@ -130,9 +140,9 @@ def generate_token(username):
     token = jwt.encode(payload, "secret_key", algorithm="HS256")
     return token
 
+
 def check_token(token):
     print(token)
-    import jwt
     # 解码Token
     try:
         payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
@@ -145,6 +155,181 @@ def check_token(token):
     except jwt.InvalidTokenError:
         return jsonify({"code": 401, "message": "无效的Token"})
     return None
+
+
+class Order(db.Model):
+    __tablename__ = 'orders'
+    order_id = db.Column(db.Int, primary_key=True, unique=True, nullable=False)  # 订单编号
+    user1 = db.Column(db.String(20), nullable=True)  # 拼车的四位用户
+    user2 = db.Column(db.String(20), nullable=True)
+    user3 = db.Column(db.String(20), nullable=True)
+    user4 = db.Column(db.String(20), nullable=True)
+    departure = db.Column(db.String(100), nullable=False)  # 出发地
+    destination = db.Column(db.String(100), nullable=False)  # 目的地
+    date = db.Column(db.Date, nullable=False)  # 日期
+    earliest_departure_time = db.Column(db.Time, nullable=False)  # 最早发车时间
+    latest_departure_time = db.Column(db.Time, nullable=False)  # 最晚发车时间
+
+    def __repr__(self):
+        return f'<Order {self.order_id}>'
+
+
+# 获取所有订单
+@app.route('/api/orders', methods=['GET'])
+def get_orders():
+    orders = Order.query.all()
+    data = [
+        {
+            "order_id": order.order_id,
+            "user1": order.user1,
+            "user2": order.user2,
+            "user3": order.user3,
+            "user4": order.user4,
+            "departure": order.departure,
+            "destination": order.destination,
+            "date": order.date.isoformat(),
+            "earliest_departure_time": order.earliest_departure_time.isoformat(),
+            "latest_departure_time": order.latest_departure_time.isoformat()
+        } for order in orders
+    ]
+    return jsonify({
+        "code": 200,
+        "message": "查询成功",
+        "data": {
+            "list": data
+        }
+    })
+
+
+# 添加新订单
+@app.route('/api/orders/add', methods=['POST'])
+def add_order():
+    # 获取请求头中的Token
+    token = request.headers.get('Authorization')
+    if not token:
+        return jsonify({
+            "code": 401,
+            "message": "Token缺失"
+        }), 401
+
+    # 检查Token的有效性
+    check_result = check_token(token)
+    if check_result:
+        return check_result  # 如果Token无效，直接返回错误信息
+
+    payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
+    current_user = payload['username']  # 解析订单发起人
+
+    data = request.json
+    new_order = Order(
+        user1=current_user,
+        departure=data['departure'],
+        destination=data['destination'],
+        date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
+        earliest_departure_time=datetime.strptime(data['earliest_departure_time'], '%H:%M').time(),
+        latest_departure_time=datetime.strptime(data['latest_departure_time'], '%H:%M').time()
+    )
+    db.session.add(new_order)
+    db.session.commit()
+    data = [
+        {
+            "order_id": new_order.order_id,
+            "user1": new_order.user1,
+            "departure": new_order.departure,
+            "destination": new_order.destination,
+            "date": new_order.date.isoformat(),
+            "earliest_departure_time": new_order.earliest_departure_time.isoformat(),
+            "latest_departure_time": new_order.latest_departure_time.isoformat()
+        }
+    ]
+    return jsonify({
+        "code": 201,
+        "message": "Order added successfully",
+        "data": data,
+        "username": current_user
+    }), 201
+
+
+# 获取单个订单
+@app.route('/api/orders/<int:order_id>', methods=['GET'])
+def get_order(order_id):
+    order = Order.query.get_or_404(order_id)
+    return jsonify({
+        "code": 200,
+        "message": "查询成功",
+        "data":
+        {
+            "order_id": order.order_id,
+            "user1": order.user1,
+            "user2": order.user2,
+            "user3": order.user3,
+            "user4": order.user4,
+            "departure": order.departure,
+            "destination": order.destination,
+            "date": order.date.isoformat(),
+            "earliest_departure_time": order.earliest_departure_time.isoformat(),
+            "latest_departure_time": order.latest_departure_time.isoformat()
+        }
+    })
+
+
+# 删除订单
+@app.route('/api/orders/remove/<int:order_id>', methods=['DELETE'])
+def delete_order(order_id):
+    # 获取请求头中的Token
+    token = request.headers.get('Authorization')
+    if not token:
+        return jsonify({
+            "code": 401,
+            "message": "Token缺失"
+        }), 401
+
+    # 检查Token的有效性
+    check_result = check_token(token)
+    if check_result:
+        return check_result  # 如果Token无效，直接返回错误信息
+
+    payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
+    current_user = payload['username']
+
+    order = Order.query.get_or_404(order_id)
+
+    users = [order.user1, order.user2, order.user3, order.user4]
+
+    non_empty_users = [user for user in users if user is not None]
+    non_empty_count = len(non_empty_users)
+
+    if non_empty_count == 1:
+        db.session.delete(order)
+        db.session.commit()
+        return jsonify({
+            "code": 201,
+            "message": "Order deleted successfully because only one user was left."
+        })
+    else:
+        # 如果有多个非空用户，找到当前用户并置空
+        if current_user == order.user1:
+            order.user1 = None
+        elif current_user == order.user2:
+            order.user2 = None
+        elif current_user == order.user3:
+            order.user3 = None
+        elif current_user == order.user4:
+            order.user4 = None
+        else:
+            return jsonify({
+                "code": 404,
+                "error": "User not found in the order"
+            }), 404
+
+        db.session.commit()
+
+        return jsonify({
+            "code": 200,
+            "message": "User removed from the order successfully",
+
+        })
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=8443)
