@@ -81,7 +81,7 @@ def register():
     # 验证用户
     user = User.query.filter_by(username=username).first()
     if user:
-        # 用户已存在
+        # 用户存在
         return jsonify({
             "code": 401,
             "message": "用户已存在"
