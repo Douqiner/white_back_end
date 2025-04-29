@@ -11,7 +11,7 @@ CREATE TABLE user (
 );
 
 CREATE TABLE orders (
-    order_id INTEGER NOT NULL,
+    order_id INTEGER NOT NULL AUTO_INCREMENT,
     user1 VARCHAR(20),
     user2 VARCHAR(20),
     user3 VARCHAR(20),
@@ -26,4 +26,7 @@ CREATE TABLE orders (
 
 SELECT * FROM user;
 
+SELECT * FROM orders;
+
 DROP TABLE user;
+DROP TABLE orders;

@@ -3,7 +3,6 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 import datetime
-from datetime import datetime
 import jwt
 
 app = Flask(__name__)
@@ -34,7 +33,7 @@ class User(db.Model):
     username = db.Column(db.String(20), nullable=False, unique=True, primary_key=True)
     password = db.Column(db.String(200), nullable=False)
     phonenumber = db.Column(db.String(11), nullable=False)
-    usertype = db.Column(db.Int, nullable=False)
+    usertype = db.Column(db.Integer, nullable=False)
     # usertype 区分用户类型 1为一般用户 2为司机
 
 
@@ -159,7 +158,7 @@ def check_token(token):
 
 class Order(db.Model):
     __tablename__ = 'orders'
-    order_id = db.Column(db.Int, primary_key=True, unique=True, nullable=False)  # 订单编号
+    order_id = db.Column(db.Integer, primary_key=True, unique=True, nullable=False)  # 订单编号
     user1 = db.Column(db.String(20), nullable=True)  # 拼车的四位用户
     user2 = db.Column(db.String(20), nullable=True)
     user3 = db.Column(db.String(20), nullable=True)
@@ -225,28 +224,25 @@ def add_order():
         user1=current_user,
         departure=data['departure'],
         destination=data['destination'],
-        date=datetime.strptime(data['date'], '%Y-%m-%d').date(),
-        earliest_departure_time=datetime.strptime(data['earliest_departure_time'], '%H:%M').time(),
-        latest_departure_time=datetime.strptime(data['latest_departure_time'], '%H:%M').time()
+        date=datetime.datetime.strptime(data['date'], '%Y-%m-%d').date(),
+        earliest_departure_time=datetime.datetime.strptime(data['earliest_departure_time'], '%H:%M').time(),
+        latest_departure_time=datetime.datetime.strptime(data['latest_departure_time'], '%H:%M').time()
     )
     db.session.add(new_order)
     db.session.commit()
-    data = [
-        {
+    data = {
             "order_id": new_order.order_id,
-            "user1": new_order.user1,
             "departure": new_order.departure,
             "destination": new_order.destination,
             "date": new_order.date.isoformat(),
             "earliest_departure_time": new_order.earliest_departure_time.isoformat(),
             "latest_departure_time": new_order.latest_departure_time.isoformat()
         }
-    ]
     return jsonify({
         "code": 201,
         "message": "Order added successfully",
-        "data": data,
-        "username": current_user
+        "username": current_user,
+        "data": data
     }), 201
 
 
