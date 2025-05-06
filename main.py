@@ -6,7 +6,7 @@ import datetime
 import jwt
 
 app = Flask(__name__)
-app.secret_key = 'xxxxxxx'
+app.secret_key = 'xxxxxx'
 
 # 配置CORS
 # CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}})
@@ -270,8 +270,8 @@ def get_order(order_id):
 
 
 # 删除订单
-@app.route('/api/orders/remove/<int:order_id>', methods=['DELETE'])
-def delete_order(order_id):
+@app.route('/api/orders/leave', methods=['POST'])
+def delete_order():
     # 获取请求头中的Token
     token = request.headers.get('Authorization')
     if not token:
@@ -285,6 +285,15 @@ def delete_order(order_id):
     if check_result:
         return check_result  # 如果Token无效，直接返回错误信息
 
+    # 获取请求体中的order_id
+    data = request.json
+    order_id = data.get('order_id')
+    if not order_id:
+        return jsonify({
+            "code": 400,
+            "message": "order_id缺失"
+        }), 400
+
     payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
     current_user = payload['username']
 
@@ -295,36 +304,43 @@ def delete_order(order_id):
     non_empty_users = [user for user in users if user is not None]
     non_empty_count = len(non_empty_users)
 
-    if non_empty_count == 1:
-        db.session.delete(order)
-        db.session.commit()
-        return jsonify({
-            "code": 201,
-            "message": "Order deleted successfully because only one user was left."
-        })
-    else:
-        # 如果有多个非空用户，找到当前用户并置空
-        if current_user == order.user1:
+    # 移除当前用户
+    if current_user in non_empty_users:
+        if order.user1 == current_user:
             order.user1 = None
-        elif current_user == order.user2:
+        elif order.user2 == current_user:
             order.user2 = None
-        elif current_user == order.user3:
+        elif order.user3 == current_user:
             order.user3 = None
-        elif current_user == order.user4:
+        elif order.user4 == current_user:
             order.user4 = None
-        else:
-            return jsonify({
-                "code": 404,
-                "error": "User not found in the order"
-            }), 404
+
+        # 重新排列用户
+        users = [order.user1, order.user2, order.user3, order.user4]
+        users = [user for user in users if user is not None]
+        order.user1, order.user2, order.user3, order.user4 = (
+            users[0] if len(users) > 0 else None,
+            users[1] if len(users) > 1 else None,
+            users[2] if len(users) > 2 else None,
+            users[3] if len(users) > 3 else None
+        )
 
         db.session.commit()
+
+        # 检查是否所有用户都离开了
+        if len(users) == 0:
+            db.session.delete(order)
+            db.session.commit()
 
         return jsonify({
             "code": 200,
-            "message": "User removed from the order successfully",
-
+            "message": "离开订单成功"
         })
+    else:
+        return jsonify({
+            "code": 404,
+            "error": "订单中没有该用户"
+        }), 404
 
 
 if __name__ == '__main__':
