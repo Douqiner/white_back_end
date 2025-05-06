@@ -413,5 +413,106 @@ def get_order():
     })
 
 
+@app.route('/api/orders/<string:keyword>', methods=['GET'])
+def search_orders(keyword):
+    search_condition = f"%{keyword}%"
+    # 去和字段departure以及destination做匹配
+    orders = Order.query.filter(
+        (Order.departure.ilike(search_condition)) | (Order.destination.ilike(search_condition))
+    ).order_by(Order.date.asc()).all()
+
+    result = []
+    for order in orders:
+        result.append({
+            "order_id": order.order_id,
+            "user1": order.user1,
+            "user2": order.user2,
+            "user3": order.user3,
+            "user4": order.user4,
+            "departure": order.departure,
+            "destination": order.destination,
+            "date": order.date.isoformat(),
+            "earliest_departure_time": order.earliest_departure_time.isoformat(),
+            "latest_departure_time": order.latest_departure_time.isoformat()
+        })
+    return jsonify({
+        "code": 200,
+        "message": "搜索成功",
+        "data": result
+    })
+
+
+@app.route('/api/user/<string:username>', methods=['GET'])
+def user_info(username):
+    user = User.query.get_or_404(username)
+    if user.usertype == 1:
+        type = '一般用户'
+    elif user.usertype == 2:
+        type = '司机'
+    else:
+        type = '类型错误'
+    return jsonify({
+        "code": 200,
+        "message": "查询成功",
+        "data":
+            {
+                "username": user.username,
+                "password": user.password,
+                "phonenumber": user.phonenumber,
+                "usertype": f"{type}"
+            }
+    })
+
+
+@app.route('/api/user/orders', methods=['GET'])
+def user_orders():
+    # 获取请求头中的Token
+    token = request.headers.get('Authorization')
+    if not token:
+        return jsonify({
+            "code": 401,
+            "message": "Token缺失"
+        }), 401
+
+    # 检查Token的有效性
+    check_result = check_token(token)
+    if check_result:
+        return check_result  # 如果Token无效，直接返回错误信息
+
+    payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
+    current_user = payload['username']  # 当前用户
+
+    # 查询当前用户参与的所有订单
+    orders = Order.query.filter(
+        (Order.user1 == current_user) |
+        (Order.user2 == current_user) |
+        (Order.user3 == current_user) |
+        (Order.user4 == current_user)
+    ).all()
+
+    result = []
+    for order in orders:
+        result.append({
+            "order_id": order.order_id,
+            "user1": order.user1,
+            "user2": order.user2,
+            "user3": order.user3,
+            "user4": order.user4,
+            "departure": order.departure,
+            "destination": order.destination,
+            "date": order.date.isoformat(),
+            "earliest_departure_time": order.earliest_departure_time.isoformat(),
+            "latest_departure_time": order.latest_departure_time.isoformat()
+        })
+
+    return jsonify({
+        "code": 200,
+        "message": "查询成功",
+        "data": {
+            "list": result
+        }
+    })
+
+
 if __name__ == '__main__':
     app.run(debug=True, port=8443)
