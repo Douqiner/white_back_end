@@ -343,5 +343,75 @@ def delete_order():
         }), 404
 
 
+@app.route('/api/orders/join', methods=['POST'])
+def join_order():
+    # 获取请求头中的Token
+    token = request.headers.get('Authorization')
+    if not token:
+        return jsonify({
+            "code": 401,
+            "message": "Token缺失"
+        }), 401
+
+    # 检查Token的有效性
+    check_result = check_token(token)
+    if check_result:
+        return check_result  # 如果Token无效，直接返回错误信息
+
+    payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
+    current_user = payload['username']  # 解析加入订单的用户
+
+    data = request.json
+    order_id = data.get('order_id')
+
+    if not order_id:
+        return jsonify({
+            "code": 400,
+            "message": "order_id缺失"
+        }), 400
+
+    order = Order.query.get_or_404(order_id)
+    # 检查订单是否已满员
+    users = [order.user1, order.user2, order.user3, order.user4]
+    non_empty_users = [user for user in users if user is not None]
+    if len(non_empty_users) >= 4:
+        return jsonify({
+            "code": 422,
+            "message": "加入失败，订单已满员"
+        }), 422
+    # 订单没有满员
+    if order.user1 is None:
+        order.user1 = current_user
+    elif order.user2 is None:
+        order.user2 = current_user
+    elif order.user3 is None:
+        order.user3 = current_user
+    elif order.user4 is None:
+        order.user4 = current_user
+
+    db.session.commit()
+
+    return jsonify({
+        "code": 200,
+        "message": "加入订单成功"
+    }), 200
+
+
+@app.route('/api/getpos', methods=['GET'])
+def get_order():
+    return jsonify({
+      "code": 200,
+      "message": "获取成功",
+      "data": {
+        "table": [
+          "嘉定校区",
+          "虹桥火车站",
+          "上海南站",
+          "四平路校区"
+        ]
+      }
+    })
+
+
 if __name__ == '__main__':
     app.run(debug=True, port=8443)
