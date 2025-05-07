@@ -398,7 +398,7 @@ def join_order():
 
 
 @app.route('/api/getpos', methods=['GET'])
-def get_order():
+def get_pos():
     return jsonify({
       "code": 200,
       "message": "获取成功",
@@ -413,7 +413,7 @@ def get_order():
     })
 
 
-@app.route('/api/orders/<string:keyword>', methods=['GET'])
+@app.route('/api/orders/search/<string:keyword>', methods=['GET'])
 def search_orders(keyword):
     search_condition = f"%{keyword}%"
     # 去和字段departure以及destination做匹配
@@ -421,9 +421,8 @@ def search_orders(keyword):
         (Order.departure.ilike(search_condition)) | (Order.destination.ilike(search_condition))
     ).order_by(Order.date.asc()).all()
 
-    result = []
-    for order in orders:
-        result.append({
+    result = [
+        {
             "order_id": order.order_id,
             "user1": order.user1,
             "user2": order.user2,
@@ -434,11 +433,15 @@ def search_orders(keyword):
             "date": order.date.isoformat(),
             "earliest_departure_time": order.earliest_departure_time.isoformat(),
             "latest_departure_time": order.latest_departure_time.isoformat()
-        })
+        } for order in orders
+    ]
+        
     return jsonify({
         "code": 200,
         "message": "搜索成功",
-        "data": result
+        "data": {
+            "list": result
+        }
     })
 
 
@@ -456,8 +459,6 @@ def user_info(username):
         "message": "查询成功",
         "data":
             {
-                "username": user.username,
-                "password": user.password,
                 "phonenumber": user.phonenumber,
                 "usertype": f"{type}"
             }
