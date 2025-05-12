@@ -21,6 +21,8 @@ CREATE TABLE orders (
     date DATE NOT NULL,
     earliest_departure_time TIME NOT NULL,
     latest_departure_time TIME NOT NULL,
+    driver VARCHAR(20),
+    remark VARCHAR(100),
     PRIMARY KEY (order_id)
 );
 

@@ -163,11 +163,13 @@ class Order(db.Model):
     user2 = db.Column(db.String(20), nullable=True)
     user3 = db.Column(db.String(20), nullable=True)
     user4 = db.Column(db.String(20), nullable=True)
+    driver = db.Column(db.String(20), nullable=True)
     departure = db.Column(db.String(100), nullable=False)  # 出发地
     destination = db.Column(db.String(100), nullable=False)  # 目的地
     date = db.Column(db.Date, nullable=False)  # 日期
     earliest_departure_time = db.Column(db.Time, nullable=False)  # 最早发车时间
     latest_departure_time = db.Column(db.Time, nullable=False)  # 最晚发车时间
+    remark = db.Column(db.String(100), nullable=False)  # remark
 
     def __repr__(self):
         return f'<Order {self.order_id}>'
@@ -184,11 +186,13 @@ def get_orders():
             "user2": order.user2,
             "user3": order.user3,
             "user4": order.user4,
+            "driver": order.driver,
             "departure": order.departure,
             "destination": order.destination,
             "date": order.date.isoformat(),
             "earliest_departure_time": order.earliest_departure_time.isoformat(),
-            "latest_departure_time": order.latest_departure_time.isoformat()
+            "latest_departure_time": order.latest_departure_time.isoformat(),
+            "remark": order.remark
         } for order in orders
     ]
     return jsonify({
@@ -218,6 +222,13 @@ def add_order():
 
     payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
     current_user = payload['username']  # 解析订单发起人
+    user_info = User.query.get_or_404(current_user)
+
+    if user_info.usertype == 2:
+        return jsonify({
+            "code": 403,
+            "message": "您当前身份为司机，不可新建订单"
+        }), 403
 
     data = request.json
     new_order = Order(
@@ -226,7 +237,8 @@ def add_order():
         destination=data['destination'],
         date=datetime.datetime.strptime(data['date'], '%Y-%m-%d').date(),
         earliest_departure_time=datetime.datetime.strptime(data['earliest_departure_time'], '%H:%M').time(),
-        latest_departure_time=datetime.datetime.strptime(data['latest_departure_time'], '%H:%M').time()
+        latest_departure_time=datetime.datetime.strptime(data['latest_departure_time'], '%H:%M').time(),
+        remark=data['remark']
     )
     db.session.add(new_order)
     db.session.commit()
@@ -236,7 +248,8 @@ def add_order():
             "destination": new_order.destination,
             "date": new_order.date.isoformat(),
             "earliest_departure_time": new_order.earliest_departure_time.isoformat(),
-            "latest_departure_time": new_order.latest_departure_time.isoformat()
+            "latest_departure_time": new_order.latest_departure_time.isoformat(),
+            "remark": new_order.remark
         }
     return jsonify({
         "code": 201,
@@ -260,11 +273,13 @@ def get_order(order_id):
                 "user2": order.user2,
                 "user3": order.user3,
                 "user4": order.user4,
+                "driver": order.driver,
                 "departure": order.departure,
                 "destination": order.destination,
                 "date": order.date.isoformat(),
                 "earliest_departure_time": order.earliest_departure_time.isoformat(),
-                "latest_departure_time": order.latest_departure_time.isoformat()
+                "latest_departure_time": order.latest_departure_time.isoformat(),
+                "remark": order.remark
             }
     })
 
@@ -298,48 +313,68 @@ def delete_order():
     current_user = payload['username']
 
     order = Order.query.get_or_404(order_id)
-
-    users = [order.user1, order.user2, order.user3, order.user4]
-
-    non_empty_users = [user for user in users if user is not None]
-    non_empty_count = len(non_empty_users)
-
-    # 移除当前用户
-    if current_user in non_empty_users:
-        if order.user1 == current_user:
-            order.user1 = None
-        elif order.user2 == current_user:
-            order.user2 = None
-        elif order.user3 == current_user:
-            order.user3 = None
-        elif order.user4 == current_user:
-            order.user4 = None
-
-        # 重新排列用户
+    user_info = User.query.get_or_404(current_user)
+    if user_info.usertype == 1:
         users = [order.user1, order.user2, order.user3, order.user4]
-        users = [user for user in users if user is not None]
-        order.user1, order.user2, order.user3, order.user4 = (
-            users[0] if len(users) > 0 else None,
-            users[1] if len(users) > 1 else None,
-            users[2] if len(users) > 2 else None,
-            users[3] if len(users) > 3 else None
-        )
 
-        db.session.commit()
+        non_empty_users = [user for user in users if user is not None]
+        non_empty_count = len(non_empty_users)
 
-        # 检查是否所有用户都离开了
-        if len(users) == 0:
-            db.session.delete(order)
+        # 移除当前用户
+        if current_user in non_empty_users:
+            if order.user1 == current_user:
+                order.user1 = None
+            elif order.user2 == current_user:
+                order.user2 = None
+            elif order.user3 == current_user:
+                order.user3 = None
+            elif order.user4 == current_user:
+                order.user4 = None
+
+            # 重新排列用户
+            users = [order.user1, order.user2, order.user3, order.user4]
+            users = [user for user in users if user is not None]
+            order.user1, order.user2, order.user3, order.user4 = (
+                users[0] if len(users) > 0 else None,
+                users[1] if len(users) > 1 else None,
+                users[2] if len(users) > 2 else None,
+                users[3] if len(users) > 3 else None
+            )
+
             db.session.commit()
 
-        return jsonify({
-            "code": 200,
-            "message": "离开订单成功"
-        })
+            # 检查是否所有用户都离开了
+            if len(users) == 0:
+                db.session.delete(order)
+                db.session.commit()
+
+            return jsonify({
+                "code": 200,
+                "message": "离开订单成功"
+            })
+        else:
+            return jsonify({
+                "code": 404,
+                "message": "订单中没有该用户"
+            }), 404
+
+    elif user_info.usertype == 2:
+        if order.driver == current_user:
+            order.driver = None
+            db.session.commit()
+            return jsonify({
+                "code": 200,
+                "message": "离开订单成功"
+            })
+        else:
+            return jsonify({
+                "code": 404,
+                "message": "订单中没有该用户"
+            }), 404
     else:
         return jsonify({
             "code": 404,
-            "error": "订单中没有该用户"
+            "message": "用户类型错误"
         }), 404
 
 
@@ -372,29 +407,51 @@ def join_order():
 
     order = Order.query.get_or_404(order_id)
     # 检查订单是否已满员
-    users = [order.user1, order.user2, order.user3, order.user4]
-    non_empty_users = [user for user in users if user is not None]
-    if len(non_empty_users) >= 4:
+    user_info = User.query.get_or_404(current_user)
+    if user_info.usertype == 1:  # 一般用户
+        users = [order.user1, order.user2, order.user3, order.user4]
+        non_empty_users = [user for user in users if user is not None]
+        if len(non_empty_users) >= 4:
+            return jsonify({
+                "code": 422,
+                "message": "加入失败，订单已满员"
+            }), 422
+        # 订单没有满员
+        if order.user1 is None:
+            order.user1 = current_user
+        elif order.user2 is None:
+            order.user2 = current_user
+        elif order.user3 is None:
+            order.user3 = current_user
+        elif order.user4 is None:
+            order.user4 = current_user
+
+        db.session.commit()
+
         return jsonify({
-            "code": 422,
-            "message": "加入失败，订单已满员"
-        }), 422
-    # 订单没有满员
-    if order.user1 is None:
-        order.user1 = current_user
-    elif order.user2 is None:
-        order.user2 = current_user
-    elif order.user3 is None:
-        order.user3 = current_user
-    elif order.user4 is None:
-        order.user4 = current_user
+            "code": 200,
+            "message": "加入订单成功"
+        }), 200
 
-    db.session.commit()
+    elif user_info.usertype == 2:  # 司机
+        if order.driver is None:
+            order.driver = current_user
+            db.session.commit()
+            return jsonify({
+                "code": 200,
+                "message": "加入订单成功"
+            }), 200
 
-    return jsonify({
-        "code": 200,
-        "message": "加入订单成功"
-    }), 200
+        else:
+            return jsonify({
+                "code": 422,
+                "message": "加入失败，订单内已有司机"
+            }), 422
+    else:
+        return jsonify({
+            "code": 404,
+            "message": "用户类型错误"
+        }), 404
 
 
 @app.route('/api/getpos', methods=['GET'])
@@ -428,11 +485,13 @@ def search_orders(keyword):
             "user2": order.user2,
             "user3": order.user3,
             "user4": order.user4,
+            "driver": order.driver,
             "departure": order.departure,
             "destination": order.destination,
             "date": order.date.isoformat(),
             "earliest_departure_time": order.earliest_departure_time.isoformat(),
-            "latest_departure_time": order.latest_departure_time.isoformat()
+            "latest_departure_time": order.latest_departure_time.isoformat(),
+            "remark": order.remark
         } for order in orders
     ]
         
@@ -499,11 +558,13 @@ def user_orders():
             "user2": order.user2,
             "user3": order.user3,
             "user4": order.user4,
+            "driver": order.driver,
             "departure": order.departure,
             "destination": order.destination,
             "date": order.date.isoformat(),
             "earliest_departure_time": order.earliest_departure_time.isoformat(),
-            "latest_departure_time": order.latest_departure_time.isoformat()
+            "latest_departure_time": order.latest_departure_time.isoformat(),
+            "remark": order.remark
         })
 
     return jsonify({
