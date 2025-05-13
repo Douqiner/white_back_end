@@ -55,7 +55,8 @@ def login():
             "message": "登录成功",
             "data": {
                 "token": token,
-                "username": user.username
+                "username": user.username,
+                "usertype": user.usertype
             }
         })
     else:
