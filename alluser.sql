@@ -26,6 +26,40 @@ CREATE TABLE orders (
     PRIMARY KEY (order_id)
 );
 
+CREATE TABLE order_status (
+    order_id INTEGER NOT NULL,
+    status INTEGER DEFAULT 0, -- 0: 未开始, 1: 进行中, 2: 已完成
+    user1_arrived BOOLEAN DEFAULT FALSE,
+    user2_arrived BOOLEAN DEFAULT FALSE,
+    user3_arrived BOOLEAN DEFAULT FALSE,
+    user4_arrived BOOLEAN DEFAULT FALSE,
+    driver_arrived BOOLEAN DEFAULT FALSE,
+    completed_at DATETIME NULL,
+    PRIMARY KEY (order_id),
+    FOREIGN KEY (order_id) REFERENCES orders (order_id)
+);
+
+CREATE TABLE driver_rating (
+    rating_id INTEGER NOT NULL AUTO_INCREMENT,
+    order_id INTEGER,
+    driver_username VARCHAR(20),
+    user_username VARCHAR(20),
+    rating FLOAT NOT NULL, -- 1-5分
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (rating_id),
+    FOREIGN KEY (order_id) REFERENCES orders (order_id),
+    FOREIGN KEY (driver_username) REFERENCES user (username),
+    FOREIGN KEY (user_username) REFERENCES user (username)
+);
+
+CREATE TABLE driver_average_rating (
+    driver_username VARCHAR(20) NOT NULL,
+    average_rating FLOAT DEFAULT 5.0,
+    rating_count INTEGER DEFAULT 0,
+    PRIMARY KEY (driver_username),
+    FOREIGN KEY (driver_username) REFERENCES user (username)
+);
+
 SELECT * FROM user;
 
 SELECT * FROM orders;
