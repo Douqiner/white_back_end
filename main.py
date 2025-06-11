@@ -37,6 +37,42 @@ class User(db.Model):
     # usertype 区分用户类型 1为一般用户 2为司机
 
 
+class Vehicle(db.Model):
+    __tablename__ = "vehicle"
+    vehicle_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    driver_username = db.Column(db.String(20), db.ForeignKey("user.username"), nullable=False)
+    license_plate = db.Column(db.String(20), nullable=False, unique=True)  # 车牌号
+    brand = db.Column(db.String(50), nullable=False)  # 品牌
+    model = db.Column(db.String(50), nullable=False)  # 型号
+    color = db.Column(db.String(20), nullable=False)  # 颜色
+    seat_count = db.Column(db.Integer, nullable=False, default=4)  # 座位数
+    is_verified = db.Column(db.Boolean, default=False)  # 是否认证
+    created_at = db.Column(db.DateTime, default=datetime.datetime.now)
+
+
+class Coupon(db.Model):
+    __tablename__ = "coupon"
+    coupon_id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    coupon_name = db.Column(db.String(100), nullable=False)
+    discount_type = db.Column(db.String(20), nullable=False)  # percentage, fixed, ……
+    discount_value = db.Column(db.Numeric(10, 2), nullable=False)
+    min_amount = db.Column(db.Numeric(10, 2), default=0)  # 最低消费金额
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date, nullable=False)
+    usage_limit = db.Column(db.Integer, default=1)  # 使用次数限制
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.datetime.now)
+
+
+class UserCoupon(db.Model):
+    __tablename__ = "user_coupon"
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    username = db.Column(db.String(20), db.ForeignKey("user.username"))
+    coupon_id = db.Column(db.Integer, db.ForeignKey("coupon.coupon_id"))
+    used_count = db.Column(db.Integer, default=0)
+    obtained_at = db.Column(db.DateTime, default=datetime.datetime.now)
+
+
 # 用户登录
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -1205,6 +1241,382 @@ def get_not_started_orders():
             )
 
     return jsonify({"code": 200, "message": "查询成功", "data": {"list": result}})
+
+
+# 车辆相关接口
+
+
+# 添加车辆信息
+@app.route("/api/vehicle/add", methods=["POST"])
+def add_vehicle():
+    # 获取请求头中的Token
+    token = request.headers.get("Authorization")
+    if not token:
+        return jsonify({"code": 401, "message": "Token缺失"}), 401
+
+    # 检查Token的有效性
+    check_result = check_token(token)
+    if check_result:
+        return check_result
+
+    payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
+    current_user = payload["username"]
+
+    # 验证用户是司机
+    user = User.query.filter_by(username=current_user).first()
+    if not user or user.usertype != 2:
+        return jsonify({"code": 403, "message": "只有司机可以添加车辆信息"}), 403
+
+    data = request.json
+    license_plate = data.get("license_plate")
+    brand = data.get("brand")
+    model = data.get("model")
+    color = data.get("color")
+    seat_count = data.get("seat_count", 4)
+
+    if not all([license_plate, brand, model, color]):
+        return jsonify({"code": 400, "message": "车辆信息不完整"}), 400
+
+    # 检查车牌号是否已存在
+    existing_vehicle = Vehicle.query.filter_by(license_plate=license_plate).first()
+    if existing_vehicle:
+        return jsonify({"code": 409, "message": "车牌号已存在"}), 409
+
+    # 创建车辆记录
+    vehicle = Vehicle(driver_username=current_user, license_plate=license_plate, brand=brand, model=model, color=color, seat_count=seat_count)
+
+    db.session.add(vehicle)
+    db.session.commit()
+
+    return jsonify({"code": 201, "message": "车辆信息添加成功", "data": {"vehicle_id": vehicle.vehicle_id, "license_plate": vehicle.license_plate, "brand": vehicle.brand, "model": vehicle.model, "color": vehicle.color, "seat_count": vehicle.seat_count, "is_verified": vehicle.is_verified}})
+
+
+# 获取司机的车辆信息
+@app.route("/api/vehicle/my-vehicles", methods=["GET"])
+def get_my_vehicles():
+    # 获取请求头中的Token
+    token = request.headers.get("Authorization")
+    if not token:
+        return jsonify({"code": 401, "message": "Token缺失"}), 401
+
+    # 检查Token的有效性
+    check_result = check_token(token)
+    if check_result:
+        return check_result
+
+    payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
+    current_user = payload["username"]
+
+    # 验证用户是司机
+    user = User.query.filter_by(username=current_user).first()
+    if not user or user.usertype != 2:
+        return jsonify({"code": 403, "message": "只有司机可以查看车辆信息"}), 403
+
+    vehicles = Vehicle.query.filter_by(driver_username=current_user).all()
+
+    vehicle_list = []
+    for vehicle in vehicles:
+        vehicle_list.append({"vehicle_id": vehicle.vehicle_id, "license_plate": vehicle.license_plate, "brand": vehicle.brand, "model": vehicle.model, "color": vehicle.color, "seat_count": vehicle.seat_count, "is_verified": vehicle.is_verified, "created_at": vehicle.created_at.isoformat()})
+
+    return jsonify({"code": 200, "message": "查询成功", "data": {"list": vehicle_list}})
+
+
+# 更新车辆信息
+@app.route("/api/vehicle/update/<int:vehicle_id>", methods=["PUT"])
+def update_vehicle(vehicle_id):
+    # 获取请求头中的Token
+    token = request.headers.get("Authorization")
+    if not token:
+        return jsonify({"code": 401, "message": "Token缺失"}), 401
+
+    # 检查Token的有效性
+    check_result = check_token(token)
+    if check_result:
+        return check_result
+
+    payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
+    current_user = payload["username"]
+
+    # 查找车辆
+    vehicle = Vehicle.query.get_or_404(vehicle_id)
+
+    # 验证车辆所有权
+    if vehicle.driver_username != current_user:
+        return jsonify({"code": 403, "message": "无权修改此车辆信息"}), 403
+
+    data = request.json
+
+    # 更新车辆信息
+    if "brand" in data:
+        vehicle.brand = data["brand"]
+    if "model" in data:
+        vehicle.model = data["model"]
+    if "color" in data:
+        vehicle.color = data["color"]
+    if "seat_count" in data:
+        vehicle.seat_count = data["seat_count"]
+    if "license_plate" in data:
+        # 检查新车牌号是否已存在
+        existing_vehicle = Vehicle.query.filter_by(license_plate=data["license_plate"]).first()
+        if existing_vehicle and existing_vehicle.vehicle_id != vehicle_id:
+            return jsonify({"code": 409, "message": "车牌号已存在"}), 409
+        vehicle.license_plate = data["license_plate"]
+
+    db.session.commit()
+
+    return jsonify({"code": 200, "message": "车辆信息更新成功", "data": {"vehicle_id": vehicle.vehicle_id, "license_plate": vehicle.license_plate, "brand": vehicle.brand, "model": vehicle.model, "color": vehicle.color, "seat_count": vehicle.seat_count, "is_verified": vehicle.is_verified}})
+
+
+# 删除车辆信息
+@app.route("/api/vehicle/delete/<int:vehicle_id>", methods=["DELETE"])
+def delete_vehicle(vehicle_id):
+    # 获取请求头中的Token
+    token = request.headers.get("Authorization")
+    if not token:
+        return jsonify({"code": 401, "message": "Token缺失"}), 401
+
+    # 检查Token的有效性
+    check_result = check_token(token)
+    if check_result:
+        return check_result
+
+    payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
+    current_user = payload["username"]
+
+    # 查找车辆
+    vehicle = Vehicle.query.get_or_404(vehicle_id)
+
+    # 验证车辆所有权
+    if vehicle.driver_username != current_user:
+        return jsonify({"code": 403, "message": "无权删除此车辆信息"}), 403
+
+    db.session.delete(vehicle)
+    db.session.commit()
+
+    return jsonify({"code": 200, "message": "车辆信息删除成功"})
+
+
+# 优惠券相关接口
+
+
+# 创建优惠券（管理员功能）
+@app.route("/api/coupon/create", methods=["POST"])
+def create_coupon():
+    data = request.json
+
+    required_fields = ["coupon_name", "discount_type", "discount_value", "start_date", "end_date"]
+    if not all(field in data for field in required_fields):
+        return jsonify({"code": 400, "message": "优惠券信息不完整"}), 400
+
+    # 验证折扣类型
+    if data["discount_type"] not in ["percentage", "fixed"]:
+        return jsonify({"code": 400, "message": "折扣类型必须是percentage或fixed"}), 400
+
+    try:
+        start_date = datetime.datetime.strptime(data["start_date"], "%Y-%m-%d").date()
+        end_date = datetime.datetime.strptime(data["end_date"], "%Y-%m-%d").date()
+
+        if start_date >= end_date:
+            return jsonify({"code": 400, "message": "结束日期必须晚于开始日期"}), 400
+
+        coupon = Coupon(coupon_name=data["coupon_name"], discount_type=data["discount_type"], discount_value=data["discount_value"], min_amount=data.get("min_amount", 0), start_date=start_date, end_date=end_date, usage_limit=data.get("usage_limit", 1), is_active=data.get("is_active", True))
+
+        db.session.add(coupon)
+        db.session.commit()
+
+        return jsonify(
+            {
+                "code": 201,
+                "message": "优惠券创建成功",
+                "data": {
+                    "coupon_id": coupon.coupon_id,
+                    "coupon_name": coupon.coupon_name,
+                    "discount_type": coupon.discount_type,
+                    "discount_value": float(coupon.discount_value),
+                    "min_amount": float(coupon.min_amount),
+                    "start_date": coupon.start_date.isoformat(),
+                    "end_date": coupon.end_date.isoformat(),
+                    "usage_limit": coupon.usage_limit,
+                    "is_active": coupon.is_active,
+                },
+            }
+        )
+    except ValueError:
+        return jsonify({"code": 400, "message": "日期格式错误"}), 400
+
+
+# 获取所有可用优惠券
+@app.route("/api/coupon/available", methods=["GET"])
+def get_available_coupons():
+    current_date = datetime.datetime.now().date()
+
+    # 查询当前有效的优惠券
+    coupons = Coupon.query.filter(Coupon.is_active == True, Coupon.start_date <= current_date, Coupon.end_date >= current_date).all()
+
+    coupon_list = []
+    for coupon in coupons:
+        coupon_list.append(
+            {
+                "coupon_id": coupon.coupon_id,
+                "coupon_name": coupon.coupon_name,
+                "discount_type": coupon.discount_type,
+                "discount_value": float(coupon.discount_value),
+                "min_amount": float(coupon.min_amount),
+                "start_date": coupon.start_date.isoformat(),
+                "end_date": coupon.end_date.isoformat(),
+                "usage_limit": coupon.usage_limit,
+            }
+        )
+
+    return jsonify({"code": 200, "message": "查询成功", "data": {"list": coupon_list}})
+
+
+# 用户领取优惠券
+@app.route("/api/coupon/claim/<int:coupon_id>", methods=["POST"])
+def claim_coupon(coupon_id):
+    # 获取请求头中的Token
+    token = request.headers.get("Authorization")
+    if not token:
+        return jsonify({"code": 401, "message": "Token缺失"}), 401
+
+    # 检查Token的有效性
+    check_result = check_token(token)
+    if check_result:
+        return check_result
+
+    payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
+    current_user = payload["username"]
+
+    # 检查优惠券是否存在且有效
+    coupon = Coupon.query.get_or_404(coupon_id)
+    current_date = datetime.datetime.now().date()
+
+    if not coupon.is_active:
+        return jsonify({"code": 400, "message": "优惠券已失效"}), 400
+
+    if coupon.start_date > current_date or coupon.end_date < current_date:
+        return jsonify({"code": 400, "message": "优惠券不在有效期内"}), 400
+
+    # 检查用户是否已经领取过该优惠券
+    existing_user_coupon = UserCoupon.query.filter_by(username=current_user, coupon_id=coupon_id).first()
+
+    if existing_user_coupon:
+        return jsonify({"code": 409, "message": "您已经领取过该优惠券"}), 409
+
+    # 创建用户优惠券记录
+    user_coupon = UserCoupon(username=current_user, coupon_id=coupon_id)
+
+    db.session.add(user_coupon)
+    db.session.commit()
+
+    return jsonify({"code": 200, "message": "优惠券领取成功", "data": {"coupon_name": coupon.coupon_name, "discount_type": coupon.discount_type, "discount_value": float(coupon.discount_value)}})
+
+
+# 获取用户的优惠券
+@app.route("/api/coupon/my-coupons", methods=["GET"])
+def get_my_coupons():
+    # 获取请求头中的Token
+    token = request.headers.get("Authorization")
+    if not token:
+        return jsonify({"code": 401, "message": "Token缺失"}), 401
+
+    # 检查Token的有效性
+    check_result = check_token(token)
+    if check_result:
+        return check_result
+
+    payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
+    current_user = payload["username"]
+
+    # 查询用户的优惠券
+    user_coupons = db.session.query(UserCoupon, Coupon).join(Coupon, UserCoupon.coupon_id == Coupon.coupon_id).filter(UserCoupon.username == current_user).all()
+
+    coupon_list = []
+    current_date = datetime.datetime.now().date()
+
+    for user_coupon, coupon in user_coupons:
+        # 判断优惠券状态
+        is_expired = coupon.end_date < current_date
+        is_used_up = user_coupon.used_count >= coupon.usage_limit
+        can_use = not is_expired and not is_used_up and coupon.is_active
+
+        coupon_list.append(
+            {
+                "coupon_id": coupon.coupon_id,
+                "coupon_name": coupon.coupon_name,
+                "discount_type": coupon.discount_type,
+                "discount_value": float(coupon.discount_value),
+                "min_amount": float(coupon.min_amount),
+                "start_date": coupon.start_date.isoformat(),
+                "end_date": coupon.end_date.isoformat(),
+                "usage_limit": coupon.usage_limit,
+                "used_count": user_coupon.used_count,
+                "obtained_at": user_coupon.obtained_at.isoformat(),
+                "can_use": can_use,
+                "is_expired": is_expired,
+            }
+        )
+
+    return jsonify({"code": 200, "message": "查询成功", "data": {"list": coupon_list}})
+
+
+# 使用优惠券（在订单支付时调用）
+@app.route("/api/coupon/use/<int:coupon_id>", methods=["POST"])
+def use_coupon(coupon_id):
+    # 获取请求头中的Token
+    token = request.headers.get("Authorization")
+    if not token:
+        return jsonify({"code": 401, "message": "Token缺失"}), 401
+
+    # 检查Token的有效性
+    check_result = check_token(token)
+    if check_result:
+        return check_result
+
+    payload = jwt.decode(token, "secret_key", algorithms=["HS256"])
+    current_user = payload["username"]
+
+    data = request.json
+    order_amount = data.get("amount", 0)
+
+    # 查找用户的优惠券
+    user_coupon = UserCoupon.query.filter_by(username=current_user, coupon_id=coupon_id).first()
+
+    if not user_coupon:
+        return jsonify({"code": 404, "message": "您没有该优惠券"}), 404
+
+    # 获取优惠券信息
+    coupon = Coupon.query.get_or_404(coupon_id)
+    current_date = datetime.datetime.now().date()
+
+    # 验证优惠券状态
+    if not coupon.is_active:
+        return jsonify({"code": 400, "message": "优惠券已失效"}), 400
+
+    if coupon.end_date < current_date:
+        return jsonify({"code": 400, "message": "优惠券已过期"}), 400
+
+    if user_coupon.used_count >= coupon.usage_limit:
+        return jsonify({"code": 400, "message": "优惠券使用次数已达上限"}), 400
+
+    if order_amount < coupon.min_amount:
+        return jsonify({"code": 400, "message": f"订单金额不满足最低消费要求({coupon.min_amount}元)"}), 400
+
+    # 计算折扣金额
+    if coupon.discount_type == "percentage":
+        discount_amount = order_amount * (float(coupon.discount_value) / 100)
+    else:  # fixed
+        discount_amount = float(coupon.discount_value)
+
+    # 确保折扣金额不超过订单金额
+    discount_amount = min(discount_amount, order_amount)
+    final_amount = order_amount - discount_amount
+
+    # 增加使用次数
+    user_coupon.used_count += 1
+    db.session.commit()
+
+    return jsonify({"code": 200, "message": "优惠券使用成功", "data": {"original_amount": order_amount, "discount_amount": discount_amount, "final_amount": final_amount, "coupon_name": coupon.coupon_name}})
 
 
 if __name__ == '__main__':
